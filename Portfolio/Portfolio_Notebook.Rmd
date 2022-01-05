@@ -1,93 +1,168 @@
-Load Libraries
+Load the libraries
 ```{r}
 library(zoo)
 library(xts)
 library(quantmod)
 library(tidyverse)
 library(PerformanceAnalytics)
-library(tseries)
-```
-What the tickers correspond to:
-SPY - s&p500 market cap weighted etf (most liquid)
-rsp - s&p500 equal weight 
-ijh - s&p400 midcap
-ijr - s&p600 small cap
-vnq - vanguard reit index fund
-tip - US t-bill inflation protected 
-vwehx - vanguard "junk" bond fund
-lqd - iShares investment grade corporate bonds
-vwo - vanguard emerging markets etf
-vea - vanguard developed markets excluding US
-gld - iShares gold investment trust
+library(tidyquant)
+library(timetk)
+library(PortfolioAnalytics)
+library(ROI)
+library(ROI.plugin.glpk)
+library(ROI.plugin.quadprog)
 
-Calculate adjusted returns with performance analytics
-```{r}
-
-e <- new.env()
-tickers <- c("spy", "rsp", "ijh", "ijr", "vnq", "tip", "vwehx", "lqd", "vwo",
-             "vea", "gld")
-getSymbols(tickers, env = e)
-
-sp=eapply(env = e,Ad)
-spf=do.call("merge",sp)
-tail(spf)
-
+help("periodReturn")
 ```
-Calculate returns on adjusted column
-```{r}
-returns <- Return.calculate(spf)
-class(returns)
-dim(returns)
-```
-slice off the first 7 months since the the optimizer can't handle NAs and 
-converting them to zero will skew the portfolio balancing.  
-```{r}
-returns <- returns["2007-07-27/2021"]
-dim(returns)
-head(returns)
-```
+Get the tickers 
+Note the fund inception of VEA was July 27, 2007 so I started with August 1, 2007
+I did not start at July 27 so monthly returns and deviations were not biased 
+by the truncated amount of monthly data. Perhaps this does not matter. 
 
-explore equal weight returns for fun and make a chart
+Calculated monthly returns as this tends to be the standard for portfolio 
+optimizatoin calculations. Whether or not its the best or daily returns should
+be computed is something to look into. 
 ```{r}
-ew_returns<- rowMeans(returns)
-ew_returns <- xts(ew_returns, order.by = time(returns))
-plot.zoo(ew_returns)
+stocks_simple_portfolio <- c("spy", "rsp", "ijh", "ijr", "vnq", "tip", 
+                             "vwehx", "lqd", "vwo", "vea", "gld") %>% 
+  tq_get(get = "stock.prices",
+         from = "2007-08-01",
+         to = "2021-12-31") %>% 
+  group_by(symbol) %>% 
+  tq_transmute(select = adjusted,
+               mutate_fun = periodReturn,
+               period = "daily",
+               col_rename = "ret",
+               type = 'log')
+
+stocks_simple_portfolio
 ```
-Use T-series to build an optimal portfolio and bar plot of weights
+To run performance analytics the data must be in type xts
 ```{r}
-opt <- portfolio.optim(returns)
-pf_weights <- opt$pw
-names(pf_weights) <- colnames(returns)
-opt_weights <- pf_weights[pf_weights >= 0.005]
+returns_xts <- stocks_simple_portfolio %>% 
+  select(symbol, date, ret) %>% 
+  spread(symbol, value = ret) %>% 
+  tk_xts()
+head(returns_xts)
+```
+Calculate Mean Return and Covariance Matrix
+```{r}
+mean_ret <- colMeans(returns_xts)
+cov_mat <- cov(returns_xts) * 252
+print(round(cov_mat,4))
+```
+Set up a random simulation of portfolio weights.  Make sure weights sum to zero
+```{r}
+weights <- runif(n = 11, 0, 1)
+weights <- weights/sum(weights)
+weights
 
 ```
-bar plot of positions
+Calculate Portfolio returns, risk, sharpe ratio set-up 
 ```{r}
-par(mar=c(8,4,4,1)+.1)
-barplot(pf_weights, las=2)
+#port_returns <- (sum(weights * mean_ret) + 1)^252 - 1
+#stddev <- sqrt(t(weights)) %*% (cov_mat %*% weights)
+#Sharpe Ratio
+#rfr = 0
+#sratio <- (port_returns - rfr) / stddev
 ```
-To build an efficient portfolio I need to know the boundary of the efficient
-frontier. Highest possible return would be the return of the best performing 
-asset. Build a matrix to try possible combinations and a for loop to calculate 
-potential portfolio means and deviations from given weights. 
+Compute Efficient Frontier using a for loop to simulate 5000 portfolios
 ```{r}
-#calculate stock mu
-stock_mu <- colMeans(returns)
-#use sequence to start at risk free rate and go up to the maximum return in 50 
-#steps
-grid <- seq(0.0001, max(stock_mu), length.out = 50)
-#create empty vectors to store means and deviations
-vpm <- vpsd <- rep(NA, length(grid))
-#empty matrix to store weights
-mweights <- matrix(NA, 50, 11)
-
-for(i in 1:length(grid)) {
-  opt<- portfolio.optim(x = returns , pm = grid[i], riskless= FALSE, 
-                        shorts = FALSE, rf=0)
-  vpm[i] <-opt$pm
-  vpsd[i] <- opt$ps
-  mweights[i, ] <- opt$pw
+theoretical_ports <- 5000
+all_wets <- matrix(nrow = 5000,
+                     ncol = 11)
+#empty vector to store portfolio returns
+port_returns <- vector('numeric', length=5000)
+#same for risk
+port_stddev <- vector('numeric', length=5000)
+port_sratios <- vector('numeric', length=5000)
+#the loop 
+for(i in seq_along(port_returns)) {
+  weights <- runif(n = 11, 0, 1)
+  weights <- weights/sum(weights)
+  #store theoretical weight in vector
+  all_weights[i,] <- weights
+  #
+  port_ret <- sum(weights * mean_ret) 
+  port_ret <- ((port_ret + 1)^252) - 1
+  port_returns[i] <- port_ret
+  #
+  stddev <- sqrt(t(weights)) %*% (cov_mat %*% weights)
+  port_stddev[i] <- stddev
+  #
+  #rfr = 0
+  sratio <- port_ret / stddev
+  port_sratios[i] <- sratio
 }
+```
+Store the heavy lifting in a table
+```{r}
+theo_port_tib <- tibble(Return = port_returns,
+                        Risk = port_stddev,
+                        SharpeRatio = port_sratios)
+theo_port_tib 
+
+
+```
+
+
+
+Initialize Portfolio Spec Object for user defined portfolio
+Add constraint for 100% investment, prohibit short sales, and the 
+target return rate
+```{r}
+stock_max_return <- max(colMeans(returns_simple_pfolio))
+max_return <- stock_max_return 
+  
+asset_names <- colnames(returns_simple_pfolio)
+pspec <- portfolio.spec(assets = asset_names)
+pspec <- add.constraint(portfolio = pspec, type = "full_investment")
+pspec <- add.constraint(portfolio = pspec, type = "long_only")
+pspec <- add.objective(portfolio=pspec, type="risk", name = "StdDev")
+pspec <- add.objective(portfolio=pspec, type="return", name = "mean")
+
+opt <- optimize.portfolio(returns_simple_pfolio, portfolio = pspec, optimize_method= "ROI", Sha)
+
+portfolio_weights <- c(extractWeights(opt))
+
+asset_name_tibble <- c(sort(c("spy", "rsp", "ijh", "ijr", "vnq", "tip", "vwehx", "lqd", "vwo",
+             "vea", "gld")))
+
+names(portfolio_weights) <- asset_name_tibble
+
+tib_optml_weights <- tibble(asset_name_tibble, portfolio_weights)
+
+
+tib_optml_weights
+
+```
+Bar Chart of Portfolio Weights
+```{r}
+tib_optml_weights %>% 
+  group_by(asset_name_tibble) %>% 
+  ggplot(aes(x = asset_name_tibble, y=portfolio_weights, fill = asset_name_tibble)) +
+    geom_col() +
+    labs(x = "Investment") +
+    labs(y = "Weight")
+    
+  
+```
+Create a table showing number of shares to purchase
+```{r}
+
+```
+
+
+
+Min_Variance_Portfolio
+```{r}
+colnames <- c('a', 'b', 'c')
+values <- c(1,2,3)
+names(values) <- colnames
+
+tib <- tibble()
+tib <- bind_rows(tib, values)
+
 
 ```
 
