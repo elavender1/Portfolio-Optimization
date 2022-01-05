@@ -1,0 +1,94 @@
+Load Libraries
+```{r}
+library(zoo)
+library(xts)
+library(quantmod)
+library(tidyverse)
+library(PerformanceAnalytics)
+library(tseries)
+```
+What the tickers correspond to:
+SPY - s&p500 market cap weighted etf (most liquid)
+rsp - s&p500 equal weight 
+ijh - s&p400 midcap
+ijr - s&p600 small cap
+vnq - vanguard reit index fund
+tip - US t-bill inflation protected 
+vwehx - vanguard "junk" bond fund
+lqd - iShares investment grade corporate bonds
+vwo - vanguard emerging markets etf
+vea - vanguard developed markets excluding US
+gld - iShares gold investment trust
+
+Calculate adjusted returns with performance analytics
+```{r}
+
+e <- new.env()
+tickers <- c("spy", "rsp", "ijh", "ijr", "vnq", "tip", "vwehx", "lqd", "vwo",
+             "vea", "gld")
+getSymbols(tickers, env = e)
+
+sp=eapply(env = e,Ad)
+spf=do.call("merge",sp)
+tail(spf)
+
+```
+Calculate returns on adjusted column
+```{r}
+returns <- Return.calculate(spf)
+class(returns)
+dim(returns)
+```
+slice off the first 7 months since the the optimizer can't handle NAs and 
+converting them to zero will skew the portfolio balancing.  
+```{r}
+returns <- returns["2007-07-27/2021"]
+dim(returns)
+head(returns)
+```
+
+explore equal weight returns for fun and make a chart
+```{r}
+ew_returns<- rowMeans(returns)
+ew_returns <- xts(ew_returns, order.by = time(returns))
+plot.zoo(ew_returns)
+```
+Use T-series to build an optimal portfolio and bar plot of weights
+```{r}
+opt <- portfolio.optim(returns)
+pf_weights <- opt$pw
+names(pf_weights) <- colnames(returns)
+opt_weights <- pf_weights[pf_weights >= 0.005]
+
+```
+bar plot of positions
+```{r}
+par(mar=c(8,4,4,1)+.1)
+barplot(pf_weights, las=2)
+```
+To build an efficient portfolio I need to know the boundary of the efficient
+frontier. Highest possible return would be the return of the best performing 
+asset. Build a matrix to try possible combinations and a for loop to calculate 
+potential portfolio means and deviations from given weights. 
+```{r}
+#calculate stock mu
+stock_mu <- colMeans(returns)
+#use sequence to start at risk free rate and go up to the maximum return in 50 
+#steps
+grid <- seq(0.0001, max(stock_mu), length.out = 50)
+#create empty vectors to store means and deviations
+vpm <- vpsd <- rep(NA, length(grid))
+#empty matrix to store weights
+mweights <- matrix(NA, 50, 11)
+
+for(i in 1:length(grid)) {
+  opt<- portfolio.optim(x = returns , pm = grid[i], riskless= FALSE, 
+                        shorts = FALSE, rf=0)
+  vpm[i] <-opt$pm
+  vpsd[i] <- opt$ps
+  mweights[i, ] <- opt$pw
+}
+
+```
+
+
