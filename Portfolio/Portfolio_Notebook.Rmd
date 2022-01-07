@@ -68,14 +68,14 @@ Calculate Portfolio returns, risk, sharpe ratio set-up
 ```
 Compute Efficient Frontier using a for loop to simulate 5000 portfolios
 ```{r}
-theoretical_ports <- 5000
-all_wets <- matrix(nrow = 5000,
+theoretical_ports <- 1000000
+all_weights <- matrix(nrow = 1000000,
                      ncol = 11)
 #empty vector to store portfolio returns
-port_returns <- vector('numeric', length=5000)
+port_returns <- vector('numeric', length=1000000)
 #same for risk
-port_stddev <- vector('numeric', length=5000)
-port_sratios <- vector('numeric', length=5000)
+port_stddev <- vector('numeric', length=1000000)
+port_sratios <- vector('numeric', length=1000000)
 #the loop 
 for(i in seq_along(port_returns)) {
   weights <- runif(n = 11, 0, 1)
@@ -100,11 +100,76 @@ Store the heavy lifting in a table
 theo_port_tib <- tibble(Return = port_returns,
                         Risk = port_stddev,
                         SharpeRatio = port_sratios)
-theo_port_tib 
+colnames(all_weights) <- colnames(returns_xts)
 
+theo_port_tib <- tk_tbl(cbind(all_weights, theo_port_tib))
+
+theo_port_tib %>% 
+  arrange(desc(SharpeRatio))
+```
+Find minimum variance portfolio and max sharpe ratio portfolio
+```{r}
+min_var <- theo_port_tib[which.min(theo_port_tib$Risk),]
+max_sharpe <- theo_port_tib[which.max(theo_port_tib$SharpeRatio),]
+high_return <- theo_port_tib[which.max(theo_port_tib$Return),]
 
 ```
-
+Plot Efficient Frontier
+```{r}
+theo_port_tib %>% 
+  ggplot(aes(x = Risk, y = Return, color = SharpeRatio)) +
+  geom_point() +
+  theme_classic() +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_continuous(labels = scales::percent) +
+  labs(x = 'Annualized Risk',
+       y = 'Annualized Returns',
+       title = "Efficient Frontier") +
+  geom_point(aes(x = Risk,
+                 y = Return), data = min_var, color = 'green') +
+  geom_point(aes(x = Risk,
+                 y = Return), data = max_sharpe, color = 'purple') +
+  geom_point(aes(x = Risk,
+                 y = Return), data = high_return, color = 'red') 
+  #annotate('text', x = 0.10, y = 0.1, label = "Tangency Portfolio") +
+  #annotate('text', x = 0.1, y = 0.1, label = "Minimum variance portfolio") 
+  
+``` 
+Plot Weights Max Sharpe
+```{r}
+max_sharpe %>% 
+  gather(gld:vwo, key = Asset,
+         value = Weights) %>%
+  mutate(Asset = as.factor(Asset)) %>%
+  ggplot(aes(x = fct_reorder(Asset,Weights), y = Weights, fill = Asset)) +
+  geom_bar(stat = 'identity') +
+  theme_minimal() +
+  labs(x = 'Assets', y = 'Weights', title = "Tangency Portfolio Weights") +
+  scale_y_continuous(labels = scales::percent)
+```
+Plot Min Variance
+```{r}
+min_var %>% 
+gather(gld:vwo, key = Asset,
+         value = Weights) %>%
+  mutate(Asset = as.factor(Asset)) %>%
+  ggplot(aes(x = fct_reorder(Asset,Weights), y = Weights, fill = Asset)) +
+  geom_bar(stat = 'identity') +
+  labs(x = 'Assets', y = 'Weights', title = "Minimum Variance Portfolio Weights") +
+  scale_y_continuous(labels = scales::percent) 
+```
+Plot Max Return
+```{r}
+high_return %>% 
+gather(gld:vwo, key = Asset,
+         value = Weights) %>%
+  mutate(Asset = as.factor(Asset)) %>%
+  ggplot(aes(x = fct_reorder(Asset,Weights), y = Weights, fill = Asset)) +
+  geom_bar(stat = 'identity') +
+  theme_minimal() +
+  labs(x = 'Assets', y = 'Weights', title = "Maximum Returns") +
+  scale_y_continuous(labels = scales::percent) 
+```
 
 
 Initialize Portfolio Spec Object for user defined portfolio
