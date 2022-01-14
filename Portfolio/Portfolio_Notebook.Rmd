@@ -8,6 +8,7 @@ library(PerformanceAnalytics)
 library(tidyquant)
 library(timetk)
 library(PortfolioAnalytics)
+library(plotly)
 library(ROI)
 library(ROI.plugin.glpk)
 library(ROI.plugin.quadprog)
@@ -107,6 +108,59 @@ theo_port_tib <- tk_tbl(cbind(all_weights, theo_port_tib))
 theo_port_tib %>% 
   arrange(desc(SharpeRatio))
 ```
+```{r}
+theo_port_tib %>% 
+  mutate(bin = cut_interval(Return, n = 60)) %>% 
+  group_by(bin) %>% 
+  arrange(desc(SharpeRatio)) %>% 
+  mutate(rank = row_number(bin)) %>% 
+  filter(rank == 1) 
+```
+```{r}
+ef <- theo_port_tib %>% 
+  mutate(bin = cut_interval(Return, n = 50)) %>% 
+  group_by(bin) %>% 
+  arrange(desc(SharpeRatio)) %>% 
+  mutate(rank = row_number(bin)) %>% 
+  filter(rank == 1) %>% 
+  ggplot(aes(x = Risk, y = Return, color = SharpeRatio)) +
+  geom_point()
+
+ggplotly(ef)
+```
+Optimal Portfolio Selection
+```{r}
+min_var <- theo_port_tib[which.min(theo_port_tib$Risk),]
+
+min_accept_return <- min_var %>% 
+                      select(Return)
+
+num_ports_for_user_tib <-  theo_port_tib %>% 
+  mutate(bin = cut_interval(Return, n = 50)) %>% 
+  group_by(bin) %>% 
+  arrange(desc(SharpeRatio)) %>% 
+  mutate(rank = row_number(bin)) %>% 
+  filter(rank == 1) %>% 
+  filter(Return >= min_accept_return) %>% 
+  count(bin =!1)
+
+num_ports_for_user <- num_ports_for_user_tib$n
+
+
+ theo_port_tib %>% 
+  mutate(bin = cut_interval(Return, n = 50)) %>% 
+  group_by(bin) %>% 
+  arrange(desc(SharpeRatio)) %>% 
+  mutate(rank = row_number(bin)) %>% 
+  filter(rank == 1) %>% 
+  filter(Return >= min_accept_return) %>% 
+  ungroup() %>% 
+  arrange(Return) %>% 
+  slice(1)
+  
+```
+
+
 Find minimum variance portfolio and max sharpe ratio portfolio
 ```{r}
 min_var <- theo_port_tib[which.min(theo_port_tib$Risk),]
@@ -114,6 +168,30 @@ max_sharpe <- theo_port_tib[which.max(theo_port_tib$SharpeRatio),]
 high_return <- theo_port_tib[which.max(theo_port_tib$Return),]
 
 ```
+
+```{r}
+theo_port_tib %>% 
+  mutate(bin = cut_interval(Return, n = 10000)) %>% 
+  group_by(bin) %>% 
+  arrange(desc(SharpeRatio)) %>% 
+  mutate(rank = row_number(bin)) %>% 
+  filter(rank == 1) %>% 
+  ggplot(aes(x = Risk, y = Return, color = SharpeRatio)) +
+  geom_point() +
+  theme_classic() +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_continuous(labels = scales::percent) +
+  labs(x = 'Annualized Risk',
+       y = 'Annualized Returns',
+       title = "Efficient Frontier") +
+  geom_point(aes(x = Risk,
+                 y = Return), data = min_var, color = 'green') +
+  geom_point(aes(x = Risk,
+                 y = Return), data = max_sharpe, color = 'purple') +
+  geom_point(aes(x = Risk,
+                 y = Return), data = high_return, color = 'red') 
+```
+
 Plot Efficient Frontier
 ```{r}
 theo_port_tib %>% 
@@ -134,10 +212,11 @@ theo_port_tib %>%
   #annotate('text', x = 0.10, y = 0.1, label = "Tangency Portfolio") +
   #annotate('text', x = 0.1, y = 0.1, label = "Minimum variance portfolio") 
   
+
 ``` 
 Plot Weights Max Sharpe
 ```{r}
-max_sharpe %>% 
+t <- max_sharpe %>% 
   gather(gld:vwo, key = Asset,
          value = Weights) %>%
   mutate(Asset = as.factor(Asset)) %>%
@@ -146,10 +225,12 @@ max_sharpe %>%
   theme_minimal() +
   labs(x = 'Assets', y = 'Weights', title = "Tangency Portfolio Weights") +
   scale_y_continuous(labels = scales::percent)
+
+ggplotly(t)
 ```
 Plot Min Variance
 ```{r}
-min_var %>% 
+m <- min_var %>% 
 gather(gld:vwo, key = Asset,
          value = Weights) %>%
   mutate(Asset = as.factor(Asset)) %>%
@@ -157,27 +238,32 @@ gather(gld:vwo, key = Asset,
   geom_bar(stat = 'identity') +
   labs(x = 'Assets', y = 'Weights', title = "Minimum Variance Portfolio Weights") +
   scale_y_continuous(labels = scales::percent) 
+
+ggplotly(m)
 ```
 Plot Max Return
 ```{r}
-high_return %>% 
+h <- high_return %>% 
 gather(gld:vwo, key = Asset,
          value = Weights) %>%
   mutate(Asset = as.factor(Asset)) %>%
   ggplot(aes(x = fct_reorder(Asset,Weights), y = Weights, fill = Asset)) +
   geom_bar(stat = 'identity') +
   theme_minimal() +
-  labs(x = 'Assets', y = 'Weights', title = "Maximum Returns") +
+  labs(x = 'Assets', y = 'Weights', title = "Maximum Returns Portfolio Weights") +
   scale_y_continuous(labels = scales::percent) 
+
+ggplotly(h)
 ```
 Create a table showing number of shares to purchase
 ```{r}
 Last_Close_Price <- c("spy", "rsp", "ijh", "ijr", "vnq", "tip", 
                              "vwehx", "lqd", "vwo", "vea", "gld") %>% 
   tq_get(get = "stock.prices",
-         from = "2021-12-31",
-         to = "2021-12-31") %>% 
+         from = "2021-12-31") %>% 
   group_by(symbol)
+
+Last_Close_Price 
 ```
 
 Initialize Portfolio Spec Object for user defined portfolio
