@@ -112,16 +112,9 @@ shinyServer(function(input, output) {
       filter(Return >= min_accept_return) %>% 
       ungroup() %>% 
       arrange(Return) %>% 
-      slice("Desired_Returns")
+      slice(input$Desired_Returns)
      })
   #used for portfolio growth and CAPM table
-  user_weights_vector <- reactive({ 
-    user_filter() %>% 
-    slice(1) %>% 
-    c(., recursive = TRUE) %>% 
-    unname
-  user_weights_vector <- user_weights_vector[1:11]
-  })
   
   output$UserweightsPlot <- renderPlotly({
     # generate bins based on input$bins from ui.R
@@ -136,8 +129,8 @@ shinyServer(function(input, output) {
       scale_y_continuous(labels = scales::percent)
     ggplotly(q)
   })
-  output$EfficientFrontier <-renderPlotly({
-    theo_port_tib %>% 
+ output$EfficientFrontier <-renderPlotly({
+    ef <- theo_port_tib %>% 
       ggplot(aes(x = Risk, y = Return, color = SharpeRatio)) +
       geom_point() +
       theme_classic() +
@@ -148,12 +141,19 @@ shinyServer(function(input, output) {
            title = "Efficient Frontier") +
       geom_point(aes(x = Risk,
                      y = Return), data = user_filter(), color = 'red') 
+    ggplotly(ef)
+    
   })
   output$PortfolioGrowth <- renderPlot({
+    user_weights_vector <- user_filter() %>% 
+        slice(1) %>% 
+        c(., recursive = TRUE) %>% 
+        unname()
+      user_weights_vector <- user_weights_vector[1:11]
     portfolio_growth <- stocks_simple_portfolio %>% 
       tq_portfolio(assets_col = symbol,
                    returns_col = ret,
-                   weights = user_weights_vector(),
+                   weights = user_weights_vector,
                    col_rename = "investment.growth",
                    wealth.index = TRUE) %>% 
       mutate(investment.growth = investment.growth * 10000)
