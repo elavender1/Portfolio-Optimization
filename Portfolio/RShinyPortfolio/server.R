@@ -48,14 +48,14 @@ library(plotly)
   #weights <- runif(n = 11, 0, 1)
   #weights <- weights/sum(weights)
   #generate matrix 
-  #theoretical_ports <- 1000000
-  all_weights <- matrix(nrow = 1000000,
+  theoretical_ports <- 100000
+  all_weights <- matrix(nrow = theoretical_ports,
                         ncol = 11)
   #empty vector to store portfolio returns
-  port_returns <- vector('numeric', length=1000000)
+  port_returns <- vector('numeric', length=theoretical_ports)
   #same for risk
-  port_stddev <- vector('numeric', length=1000000)
-  port_sratios <- vector('numeric', length=1000000)
+  port_stddev <- vector('numeric', length=theoretical_ports)
+  port_sratios <- vector('numeric', length=theoretical_ports)
   #the loop 
   for(i in seq_along(port_returns)) {
     weights <- runif(n = 11, 0, 1)
@@ -87,7 +87,7 @@ library(plotly)
 #screenout suboptimal portfolios with too low returns  
   min_accept_return <- min_var %>% 
     select(Return)
-#screen for max portfolios for the user return slider  
+  #screen for max portfolios for the user return slider  
   num_ports_for_user_tib <-  theo_port_tib %>% 
     mutate(bin = cut_interval(Return, n = 50)) %>% 
     group_by(bin) %>% 
@@ -101,8 +101,20 @@ library(plotly)
   
   # Define server logic required to draw the UserweightsPlot
 shinyServer(function(input, output) {
+  #logic for UI slider max values
+  output$slider <- renderUI({
+    sliderInput(inputId = "Desired_Returns",
+                label = "Specify your risk tolerance with the slider. If you are very risk averse, select 1",
+                min = 1,
+                max = num_ports_for_user,
+                value = 1,
+                step = seq(1, num_ports_for_user, 1),
+                ticks = TRUE,
+    )
+  })
   #logic to define user portfolio reactive filter
   user_filter <- reactive({ 
+    req(input$Desired_Returns)
     theo_port_tib %>% 
       mutate(bin = cut_interval(Return, n = 50)) %>% 
       group_by(bin) %>% 
@@ -131,6 +143,11 @@ shinyServer(function(input, output) {
   })
  output$EfficientFrontier <-renderPlotly({
     ef <- theo_port_tib %>% 
+      mutate(bin = cut_interval(Return, n = 10000)) %>% 
+      group_by(bin) %>% 
+      arrange(desc(SharpeRatio)) %>% 
+      mutate(rank = row_number(bin)) %>% 
+      filter(rank == 1) %>% 
       ggplot(aes(x = Risk, y = Return, color = SharpeRatio)) +
       geom_point() +
       theme_classic() +

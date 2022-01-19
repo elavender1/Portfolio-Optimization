@@ -19,14 +19,7 @@ shinyUI(fluidPage(
   # Sidebar with a slider input for number of bins
   sidebarLayout(
     sidebarPanel(
-      sliderInput(inputId = "Desired_Returns",
-                  label = "Specify your risk tolerance with the slider. If you are very risk averse, select 1",
-                  min = 1,
-                  max = 37,
-                  value = 1,
-                  step = seq(1, 37, 1),
-                  ticks = TRUE,
-      )
+      uiOutput("slider") 
     ),
     
     #Show a plot of the generated distribution
