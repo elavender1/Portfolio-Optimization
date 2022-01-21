@@ -184,26 +184,42 @@ shinyServer(function(input, output) {
         unname()
       user_weights_vector <- user_weights_vector[1:11]
       #space for clarity
-    portfolio_growth <- stocks_simple_portfolio %>% 
-      filter(date > sample_test) %>% 
-      tq_portfolio(assets_col = symbol,
-                   returns_col = ret,
-                   weights = user_weights_vector,
-                   col_rename = "investment.growth",
-                   wealth.index = TRUE,
-                   rebalance_on = c("years")) %>%
-      mutate(investment.growth = investment.growth * 10000)
-    portfolio_growth %>% 
-      ggplot(aes(x=date, y=investment.growth)) +
-      geom_line(size =2, color=palette_light()[[3]]) +
-      labs(title = "Portfolio Growth",
-           subtitle = "Your Optimal Portfolio",
-           caption = "Assuming Dividends Reinvested",
-           x = "", y = "Portfolio Value") +
-      geom_smooth(method = "loess") +
-      theme_tq() +
-      scale_color_tq() +
-      scale_y_continuous(labels = scales::dollar)
+      portfolio_growth <- stocks_simple_portfolio %>% 
+        filter(date > sample_test) %>% 
+        tq_portfolio(assets_col = symbol,
+                     returns_col = ret,
+                     weights = user_weights_vector,
+                     col_rename = "portfolio.growth",
+                     wealth.index = TRUE,
+                     rebalance_on = c("years")) %>% 
+        mutate(portfolio.growth = portfolio.growth * 10000)
+      
+      spy_returns <- stocks_simple_portfolio %>% 
+        filter(symbol == "spy") %>% 
+        filter(date > sample_test) %>%
+        rename(retB = ret) %>% 
+        tq_portfolio(assets_col = symbol,
+                     returns_col = retB,
+                     weights = 1,
+                     col_rename = "sp500.growth",
+                     wealth.index = TRUE) %>% 
+        mutate(sp500.growth = sp500.growth * 10000)
+      
+      
+      sp500_user_portfolio_join <- left_join(portfolio_growth,
+                                             spy_returns,
+                                             by = "date")
+      sp500_user_portfolio_join %>% 
+        select(date, portfolio.growth, sp500.growth) %>% 
+        gather(key = "variable", value = "value", -date) %>% 
+        ggplot(aes(x= date, y= value)) +
+        geom_line(aes(color = variable, linetype=variable)) +
+        labs(title = "Your Portfolio Growth verses the S&P500",
+             caption = "Assuming Dividends Reinvested",
+             x = " ", y = "Portfolio Value") +
+        theme_tq() +
+        scale_color_tq() +
+        scale_y_continuous(labels = scales::dollar)
   })
   output$PortfolioMonthlyReturns <- renderPlot({
     user_weights_vector <- user_filter() %>% 
