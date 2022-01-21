@@ -31,6 +31,9 @@ shinyUI(fluidPage(
         plotOutput("PortfolioGrowth")
       ),
       fluidRow(
+        plotOutput("PortfolioMonthlyReturns")
+      ),
+      fluidRow(
         plotlyOutput("EfficientFrontier")
       )
     )

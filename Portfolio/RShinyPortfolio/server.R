@@ -22,6 +22,7 @@ library(ROI.plugin.glpk)
 library(ROI.plugin.quadprog)
 library(ggplot2)
 library(plotly)
+library(PMwR)
 
   
   #pull tickers into a tibble compute log daily returns with adjusted column
@@ -29,26 +30,39 @@ library(plotly)
                                "vwehx", "lqd", "vwo", "vea", "gld") %>% 
     tq_get(get = "stock.prices",
            from = "2007-08-01",
-           to = "2021-12-31") %>% 
+           to = "2022-1-20") %>% 
     group_by(symbol) %>% 
     tq_transmute(select = adjusted,
                  mutate_fun = periodReturn,
                  period = "daily",
                  col_rename = "ret",
                  type = 'log')
+  #pull tickers for monthly data
+  stocks_simple_portfolio_mon <- c("spy", "rsp", "ijh", "ijr", "vnq", "tip", 
+                               "vwehx", "lqd", "vwo", "vea", "gld") %>% 
+    tq_get(get = "stock.prices",
+           from = "2007-08-01",
+           to = "2021-12-31") %>% 
+    group_by(symbol) %>% 
+    tq_transmute(select = adjusted,
+                 mutate_fun = periodReturn,
+                 period = "monthly",
+                 col_rename = "returns",
+                 type = 'log')
   #convert data to xts object
   returns_xts <- stocks_simple_portfolio %>% 
     select(symbol, date, ret) %>% 
     spread(symbol, value = ret) %>% 
     tk_xts()
+  returns_estim <- window(returns_xts, start = "2007-08-01", end = "2017-08-01")
   #calculate mean return
-  mean_ret <- colMeans(returns_xts)
-  cov_mat <- cov(returns_xts) * 252
+  mean_ret <- colMeans(returns_estim)
+  cov_mat <- cov(returns_estim) * 252
   #create random weights
   #weights <- runif(n = 11, 0, 1)
   #weights <- weights/sum(weights)
   #generate matrix 
-  theoretical_ports <- 100000
+  theoretical_ports <- 1000000
   all_weights <- matrix(nrow = theoretical_ports,
                         ncol = 11)
   #empty vector to store portfolio returns
@@ -98,6 +112,8 @@ library(plotly)
     count(bin =!1)
   
   num_ports_for_user <- num_ports_for_user_tib$n
+  #date to begin out of sample test
+  sample_test = "2017-08-01"
   
   # Define server logic required to draw the UserweightsPlot
 shinyServer(function(input, output) {
@@ -167,16 +183,19 @@ shinyServer(function(input, output) {
         c(., recursive = TRUE) %>% 
         unname()
       user_weights_vector <- user_weights_vector[1:11]
+      #space for clarity
     portfolio_growth <- stocks_simple_portfolio %>% 
+      filter(date > sample_test) %>% 
       tq_portfolio(assets_col = symbol,
                    returns_col = ret,
                    weights = user_weights_vector,
                    col_rename = "investment.growth",
-                   wealth.index = TRUE) %>% 
+                   wealth.index = TRUE,
+                   rebalance_on = c("years")) %>%
       mutate(investment.growth = investment.growth * 10000)
     portfolio_growth %>% 
       ggplot(aes(x=date, y=investment.growth)) +
-      geom_line(size =2, color=palette_light()[[1]]) +
+      geom_line(size =2, color=palette_light()[[3]]) +
       labs(title = "Portfolio Growth",
            subtitle = "Your Optimal Portfolio",
            caption = "Assuming Dividends Reinvested",
@@ -185,6 +204,26 @@ shinyServer(function(input, output) {
       theme_tq() +
       scale_color_tq() +
       scale_y_continuous(labels = scales::dollar)
+  })
+  output$PortfolioMonthlyReturns <- renderPlot({
+    user_weights_vector <- user_filter() %>% 
+      slice(1) %>% 
+      c(., recursive = TRUE) %>% 
+      unname()
+    user_weights_vector <- user_weights_vector[1:11]
+    #space for clarity
+    stocks_simple_portfolio_mon %>% 
+      filter(date > sample_test) %>% 
+      tq_portfolio(assets_col = symbol, 
+                   returns_col = returns, 
+                   weights = user_weights_vector) %>% 
+      ggplot(aes(x = date, y = portfolio.returns)) +
+      geom_col(fill = palette_light()[[10]]) +
+      labs(title = "Portfolio Returns",
+           x = "", y = "Monthly Returns") +
+      theme_tq() +
+      scale_color_tq() +
+      scale_y_continuous(labels = scales::percent)
   })
 })
 
